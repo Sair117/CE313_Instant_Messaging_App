@@ -43,7 +43,7 @@ def start_server():
     server.bind((HOST, PORT))
     
     # 3. Start Listening (The '5' means up to 5 people can wait in line)
-    server.listen(5)
+    server.listen(100)
     print(f"[LISTENING] Server is listening on {HOST}:{PORT}")
     
     while True:
