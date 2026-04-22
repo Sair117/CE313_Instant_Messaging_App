@@ -4,9 +4,11 @@ import os
 import logging
 from contextlib import contextmanager
 
+
 # 1. Robust Path Resolution [Suggestion 2]
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, '..', 'data', 'im_system.db')
+
 
 # 2. Logging Setup [Suggestion 8]
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
