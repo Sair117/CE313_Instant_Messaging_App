@@ -1,6 +1,7 @@
 import logging
 import uuid
 import threading
+from datetime import datetime, timezone
 from typing import Dict, Any
 from protocol import MessageProtocol
 import database
@@ -25,6 +26,8 @@ class MessageRouter:
             "create_group": self._handle_create_group,
             "group_manage": self._handle_group_manage,
             "leave_group": self._handle_leave_group,
+            "get_friends": self._handle_get_friends,
+            "get_groups": self._handle_get_groups,
             "ack": self._handle_ack,
             "ping": self._handle_ping,
         }
@@ -65,11 +68,13 @@ class MessageRouter:
             target_p = self.active_users.get(target)
 
         msg_id = str(uuid.uuid4())
+        now_utc = datetime.now(timezone.utc).isoformat()
         delivery_packet = {
             "type": "direct_msg",
             "msg_id": msg_id,
             "sender": sender,
             "content": content,
+            "timestamp": now_utc,
         }
 
         # Attempt live delivery, fallback to queue [Critique 7/8]
@@ -99,19 +104,21 @@ class MessageRouter:
 
         for member, protocol in recipients.items():
             msg_id = str(uuid.uuid4())
+            now_utc = datetime.now(timezone.utc).isoformat()
             group_packet = {
                 "type": "group_msg",
                 "msg_id": msg_id,
                 "sender": sender,
                 "group_id": g_id,
                 "content": content,
+                "timestamp": now_utc,
             }
 
             if protocol and protocol.send(group_packet):
                 continue # Delivered
             
             # Queuing if offline OR if the live send fails [Critique 7]
-            database.queue_offline_message(sender, member, "group", content)
+            database.queue_offline_message(sender, member, "group", content, group_id=g_id)
             logger.info(f"Queued group msg for {member}")
 
     # ---------------------------------------------------------------
@@ -228,6 +235,28 @@ class MessageRouter:
             self._send_to(sender, {"type": "group_res", "success": False, "message": "You are not a member of this group."})
 
     # ---------------------------------------------------------------
+    #  Data Query Handlers
+    # ---------------------------------------------------------------
+
+    def _handle_get_friends(self, sender: str, msg: dict):
+        """Returns the sender's friends list and pending incoming requests."""
+        friends = database.get_friends(sender)
+        pending = database.get_pending_requests(sender)
+        self._send_to(sender, {
+            "type": "friends_list",
+            "friends": friends,
+            "pending_requests": pending,
+        })
+
+    def _handle_get_groups(self, sender: str, msg: dict):
+        """Returns all groups the sender belongs to."""
+        groups = database.get_user_groups(sender)
+        self._send_to(sender, {
+            "type": "groups_list",
+            "groups": groups,
+        })
+
+    # ---------------------------------------------------------------
     #  Utility Methods
     # ---------------------------------------------------------------
 
@@ -258,14 +287,21 @@ class MessageRouter:
         for msg in pending:
             msg_id = str(uuid.uuid4())
             # Prepare the packet for the mobile app
+            # Ensure timestamp is explicitly marked as UTC
+            ts = msg["timestamp"]
+            if ts and not ts.endswith('Z') and '+' not in ts:
+                ts = ts + 'Z'
             sync_packet = {
                 "type": msg["type"],
                 "msg_id": msg_id,
                 "sender": msg["sender"],
                 "content": msg["content"],
-                "timestamp": msg["timestamp"],
+                "timestamp": ts,
                 "is_sync": True  # Tell the Flutter app this is an old message
             }
+            # Include group_id for group messages so the app routes correctly
+            if msg.get("group_id"):
+                sync_packet["group_id"] = msg["group_id"]
             
             if protocol.send(sync_packet):
                 # Register the pending ACK — only delete from DB when client ACKs
