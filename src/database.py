@@ -81,6 +81,7 @@ def init_db():
                 target      TEXT NOT NULL,
                 target_type TEXT NOT NULL CHECK (target_type IN ('user', 'group')),
                 content     TEXT NOT NULL,
+                group_id    TEXT,
                 timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
@@ -134,13 +135,13 @@ def is_friend(user_a: str, user_b: str) -> bool:
         ''', (user_a, user_b, user_b, user_a))
         return cursor.fetchone() is not None
 
-def queue_offline_message(sender: str, target: str, t_type: str, content: str):
+def queue_offline_message(sender: str, target: str, t_type: str, content: str, group_id: str = None):
     """Task 1: Persists messages for users who are currently disconnected."""
     with get_connection() as conn:
         conn.execute('''
-            INSERT INTO offline_messages (sender, target, target_type, content) 
-            VALUES (?, ?, ?, ?)
-        ''', (sender, target, t_type, content))
+            INSERT INTO offline_messages (sender, target, target_type, content, group_id) 
+            VALUES (?, ?, ?, ?, ?)
+        ''', (sender, target, t_type, content, group_id))
 
 def get_group_members(group_id: str) -> list[str]:
     """Task 2: Retrieves all usernames associated with a group."""
@@ -168,7 +169,7 @@ def fetch_offline_messages(username: str) -> list[dict]:
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT id, sender, content, timestamp, target_type 
+            SELECT id, sender, content, timestamp, target_type, group_id 
             FROM offline_messages 
             WHERE target = ? 
             ORDER BY timestamp ASC
@@ -180,7 +181,8 @@ def fetch_offline_messages(username: str) -> list[dict]:
                 "sender": row[1],
                 "content": row[2],
                 "timestamp": row[3],
-                "type": "direct_msg" if row[4] == "user" else "group_msg"
+                "type": "direct_msg" if row[4] == "user" else "group_msg",
+                "group_id": row[5]
             } 
             for row in cursor.fetchall()
         ]
@@ -254,3 +256,36 @@ def is_group_creator(group_id: str, username: str) -> bool:
             (group_id, username)
         )
         return cursor.fetchone() is not None
+
+def get_friends(username: str) -> list[str]:
+    """Returns all accepted friends for a user (bidirectional lookup)."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT CASE WHEN requester = ? THEN receiver ELSE requester END as friend
+            FROM friendships
+            WHERE status = 'accepted' AND (requester = ? OR receiver = ?)
+        ''', (username, username, username))
+        return [row[0] for row in cursor.fetchall()]
+
+def get_pending_requests(username: str) -> list[str]:
+    """Returns usernames of people who sent a pending friend request to this user."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT requester FROM friendships WHERE receiver = ? AND status = 'pending'",
+            (username,)
+        )
+        return [row[0] for row in cursor.fetchall()]
+
+def get_user_groups(username: str) -> list[dict]:
+    """Returns all groups a user is a member of, including creator info."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT gm.group_id, g.created_by
+            FROM group_members gm
+            JOIN groups g ON gm.group_id = g.group_id
+            WHERE gm.username = ?
+        ''', (username,))
+        return [{"group_id": row[0], "created_by": row[1]} for row in cursor.fetchall()]
