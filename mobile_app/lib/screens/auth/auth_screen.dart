@@ -71,7 +71,7 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final auth = context.watch<AuthProvider>();
-    final conn = context.read<ConnectionService>();
+    final conn = context.watch<ConnectionService>();
     final isLoading = auth.state == AuthState.connecting ||
         auth.state == AuthState.authenticating;
 
@@ -187,6 +187,20 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
                           ],
                         ),
                       ),
+
+                    // Powered by AWS logo
+                    const SizedBox(height: 32),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 40),
+                      child: Opacity(
+                        opacity: 0.7,
+                        child: Image.asset(
+                          'assets/aws-whitepng.webp',
+                          width: 180,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
