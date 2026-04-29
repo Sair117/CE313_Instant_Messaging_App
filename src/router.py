@@ -133,11 +133,23 @@ class MessageRouter:
             return
 
         with self._ack_lock:
-            offline_db_id = self._pending_acks.pop(ack_id, None)
+            ack_data = self._pending_acks.pop(ack_id, None)
 
-        if offline_db_id is not None:
+        if ack_data is not None:
+            offline_db_id = ack_data["db_id"]
+            original_sender = ack_data["sender"]
+            msg_type = ack_data["type"]
+            
             database.delete_single_offline_message(offline_db_id)
             logger.info(f"[ACK] '{sender}' confirmed msg_id={ack_id}, deleted offline row {offline_db_id}")
+            
+            # Send a delayed delivery receipt to the original sender if it was a direct message
+            if msg_type == "direct_msg":
+                self._send_to(original_sender, {
+                    "type": "receipt",
+                    "status": "delivered",
+                    "target": sender
+                })
 
     def _handle_ping(self, sender: str, msg: dict):
         """Responds to a client keepalive ping with a pong."""
@@ -306,7 +318,11 @@ class MessageRouter:
             if protocol.send(sync_packet):
                 # Register the pending ACK — only delete from DB when client ACKs
                 with self._ack_lock:
-                    self._pending_acks[msg_id] = msg["id"]
+                    self._pending_acks[msg_id] = {
+                        "db_id": msg["id"],
+                        "sender": msg["sender"],
+                        "type": msg["type"]
+                    }
             else:
                 # Send failed, leave the message in the DB for next login
                 logger.warning(f"[SYNC] Failed to deliver msg {msg['id']} to '{username}', keeping in queue.")

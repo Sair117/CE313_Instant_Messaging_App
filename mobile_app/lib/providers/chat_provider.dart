@@ -161,12 +161,13 @@ class ChatProvider extends ChangeNotifier {
     final target = data['target'] as String? ?? '';
     final status = data['status'] as String? ?? '';
 
-    // Find the most recent pending message to this target
+    // Find the oldest pending message to this target
     final msgs = _messages[target];
     if (msgs == null) return;
 
-    for (int i = msgs.length - 1; i >= 0; i--) {
-      if (msgs[i].isMine && msgs[i].status == MessageStatus.sending) {
+    for (int i = 0; i < msgs.length; i++) {
+      if (msgs[i].isMine && 
+          (msgs[i].status == MessageStatus.sending || msgs[i].status == MessageStatus.queued)) {
         msgs[i].status = status == 'delivered'
             ? MessageStatus.delivered
             : MessageStatus.queued;
@@ -266,14 +267,27 @@ class ChatProvider extends ChangeNotifier {
 
   /// Mark a conversation as active and reset its unread count.
   void markRead(String convId) {
-    _activeConversationId = convId;
-    _unreadCounts.remove(convId);
-    notifyListeners();
+    bool changed = false;
+    if (_activeConversationId != convId) {
+      _activeConversationId = convId;
+      changed = true;
+    }
+    if (_unreadCounts.containsKey(convId)) {
+      _unreadCounts.remove(convId);
+      changed = true;
+    }
+    
+    if (changed) {
+      notifyListeners();
+    }
   }
 
   /// Clear the active conversation (e.g., when navigating back to home).
   void clearActiveConversation() {
-    _activeConversationId = null;
+    if (_activeConversationId != null) {
+      _activeConversationId = null;
+      notifyListeners();
+    }
   }
 
   /// Delete a conversation and its messages from memory and DB.
