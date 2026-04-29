@@ -143,6 +143,15 @@ def queue_offline_message(sender: str, target: str, t_type: str, content: str, g
             VALUES (?, ?, ?, ?, ?)
         ''', (sender, target, t_type, content, group_id))
 
+def get_pending_targets_for_sender(sender: str) -> list[str]:
+    """Returns a list of users who still have pending offline messages from this sender."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT DISTINCT target FROM offline_messages WHERE sender = ?
+        ''', (sender,))
+        return [row[0] for row in cursor.fetchall()]
+
 def get_group_members(group_id: str) -> list[str]:
     """Task 2: Retrieves all usernames associated with a group."""
     with get_connection() as conn:

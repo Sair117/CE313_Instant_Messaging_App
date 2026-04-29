@@ -97,6 +97,9 @@ class ChatProvider extends ChangeNotifier {
       case 'receipt':
         _handleReceipt(msg);
         break;
+      case 'outbound_status':
+        _handleOutboundStatus(msg);
+        break;
     }
   }
 
@@ -295,6 +298,29 @@ class ChatProvider extends ChangeNotifier {
     
     if (changed) {
       notifyListeners();
+    }
+  }
+
+  void _handleOutboundStatus(Map<String, dynamic> data) {
+    final pendingTargets = List<String>.from(data['pending_targets'] ?? []);
+    
+    bool changed = false;
+    for (final target in _messages.keys) {
+      if (!pendingTargets.contains(target)) {
+        // All messages to this target must be delivered
+        final msgs = _messages[target]!;
+        for (int i = 0; i < msgs.length; i++) {
+          if (msgs[i].isMine && msgs[i].status == MessageStatus.queued) {
+            msgs[i].status = MessageStatus.delivered;
+            _safeDb(() => LocalStorage.updateMessageStatus(msgs[i].id, msgs[i].status));
+            changed = true;
+          }
+        }
+      }
+    }
+    
+    if (changed) {
+      Future.delayed(Duration.zero, notifyListeners);
     }
   }
 

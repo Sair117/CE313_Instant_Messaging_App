@@ -80,6 +80,7 @@ def handle_client(conn, addr):
         username = handle_auth(protocol)
         if not username: return
         router.sync_offline_messages(username)
+        router.sync_outbound_status(username)
         conn.settimeout(HEARTBEAT_TIMEOUT)  # Client must send a ping within this interval
         logger.info(f"[SESSION] '{username}' active.")
 

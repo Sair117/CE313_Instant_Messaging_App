@@ -53,9 +53,10 @@ class ConnectionService extends ChangeNotifier {
       _msgSub?.cancel();
       _msgSub = _tcp.messages.listen((msg) {
         if (msg['type'] == 'pong') return; // Swallow pong responses
-        // Schedule on microtask queue to avoid calling notifyListeners()
-        // during an ongoing widget build, which freezes the UI.
-        Future.microtask(() => onMessage?.call(msg));
+        // Forward via event loop to avoid build-phase clashes if UI is currently building
+        Future.delayed(Duration.zero, () {
+          onMessage?.call(msg);
+        });
       });
 
       // Listen for disconnections

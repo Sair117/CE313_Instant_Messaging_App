@@ -326,3 +326,17 @@ class MessageRouter:
             else:
                 # Send failed, leave the message in the DB for next login
                 logger.warning(f"[SYNC] Failed to deliver msg {msg['id']} to '{username}', keeping in queue.")
+
+    def sync_outbound_status(self, username: str):
+        """
+        Tells the user which of their sent messages are STILL pending delivery.
+        Any target NOT in this list implies all messages sent to them are delivered.
+        """
+        pending_targets = database.get_pending_targets_for_sender(username)
+        with self.lock:
+            p = self.active_users.get(username)
+        if p:
+            p.send({
+                "type": "outbound_status",
+                "pending_targets": pending_targets
+            })
