@@ -67,7 +67,7 @@ class MessageRouter:
         with self.lock:
             target_p = self.active_users.get(target)
 
-        msg_id = str(uuid.uuid4())
+        msg_id = msg.get("msg_id") or str(uuid.uuid4())
         now_utc = datetime.now(timezone.utc).isoformat()
         delivery_packet = {
             "type": "direct_msg",

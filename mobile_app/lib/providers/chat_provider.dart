@@ -160,19 +160,34 @@ class ChatProvider extends ChangeNotifier {
   void _handleReceipt(Map<String, dynamic> data) {
     final target = data['target'] as String? ?? '';
     final status = data['status'] as String? ?? '';
+    final msgId = data['msg_id'] as String?;
 
-    // Find the oldest pending message to this target
     final msgs = _messages[target];
     if (msgs == null) return;
 
-    for (int i = 0; i < msgs.length; i++) {
-      if (msgs[i].isMine && 
-          (msgs[i].status == MessageStatus.sending || msgs[i].status == MessageStatus.queued)) {
-        msgs[i].status = status == 'delivered'
-            ? MessageStatus.delivered
-            : MessageStatus.queued;
-        _safeDb(() => LocalStorage.updateMessageStatus(msgs[i].id, msgs[i].status));
-        break;
+    if (msgId != null) {
+      // Exact match (live receipt)
+      for (int i = 0; i < msgs.length; i++) {
+        if (msgs[i].id == msgId) {
+          if (status == 'delivered') {
+            msgs[i].status = MessageStatus.delivered;
+          } else if (status == 'queued' && msgs[i].status == MessageStatus.sending) {
+            msgs[i].status = MessageStatus.queued;
+          }
+          _safeDb(() => LocalStorage.updateMessageStatus(msgs[i].id, msgs[i].status));
+          break;
+        }
+      }
+    } else {
+      // Fallback match (offline sync delayed receipt, which is always 'delivered')
+      if (status == 'delivered') {
+        for (int i = 0; i < msgs.length; i++) {
+          if (msgs[i].isMine && msgs[i].status == MessageStatus.queued) {
+            msgs[i].status = MessageStatus.delivered;
+            _safeDb(() => LocalStorage.updateMessageStatus(msgs[i].id, msgs[i].status));
+            break;
+          }
+        }
       }
     }
     notifyListeners();
@@ -204,6 +219,7 @@ class ChatProvider extends ChangeNotifier {
       'type': 'direct_msg',
       'target': target,
       'content': content,
+      'msg_id': localId,
     });
 
     if (!sent) {
