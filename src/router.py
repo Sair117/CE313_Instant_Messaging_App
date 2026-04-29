@@ -82,7 +82,7 @@ class MessageRouter:
             self._send_to(sender, {"type": "receipt", "status": "delivered", "target": target, "msg_id": msg_id})
         else:
             database.queue_offline_message(sender, target, "user", content)
-            self._send_to(sender, {"type": "receipt", "status": "queued", "target": target})
+            self._send_to(sender, {"type": "receipt", "status": "queued", "target": target, "msg_id": msg_id})
 
     def _route_group(self, sender: str, msg: dict):
         """Task 2: Group Fan-out with Lock Snapshots [Critique 4/5]."""
