@@ -301,27 +301,45 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
-  void _handleOutboundStatus(Map<String, dynamic> data) {
+  void _handleOutboundStatus(Map<String, dynamic> data) async {
     final pendingTargets = List<String>.from(data['pending_targets'] ?? []);
     
-    bool changed = false;
-    for (final target in _messages.keys) {
-      if (!pendingTargets.contains(target)) {
-        // All messages to this target must be delivered
-        final msgs = _messages[target]!;
-        for (int i = 0; i < msgs.length; i++) {
-          if (msgs[i].isMine && msgs[i].status == MessageStatus.queued) {
-            msgs[i].status = MessageStatus.delivered;
-            _safeDb(() => LocalStorage.updateMessageStatus(msgs[i].id, msgs[i].status));
-            changed = true;
-          }
+    // Fix race condition: Update the local database directly in case 
+    // loadFromStorage() hasn't finished populating _messages yet!
+    await _safeDb(() async {
+      final db = await LocalStorage.database;
+      // status = 1 means MessageStatus.queued
+      final queuedMessages = await db.query('messages', where: 'status = ?', whereArgs: [1]);
+      
+      bool dbChanged = false;
+      for (final row in queuedMessages) {
+        final target = row['conversation_id'] as String;
+        if (!pendingTargets.contains(target)) {
+          final id = row['id'] as String;
+          await LocalStorage.updateMessageStatus(id, MessageStatus.delivered);
+          dbChanged = true;
         }
       }
-    }
-    
-    if (changed) {
-      Future.delayed(Duration.zero, notifyListeners);
-    }
+
+      if (dbChanged) {
+        // Also update memory if _messages happens to be loaded
+        bool memoryChanged = false;
+        for (final target in _messages.keys) {
+          if (!pendingTargets.contains(target)) {
+            final msgs = _messages[target]!;
+            for (int i = 0; i < msgs.length; i++) {
+              if (msgs[i].isMine && msgs[i].status == MessageStatus.queued) {
+                msgs[i].status = MessageStatus.delivered;
+                memoryChanged = true;
+              }
+            }
+          }
+        }
+        if (memoryChanged) {
+          Future.delayed(Duration.zero, notifyListeners);
+        }
+      }
+    });
   }
 
   /// Clear the active conversation (e.g., when navigating back to home).
@@ -346,8 +364,12 @@ class ChatProvider extends ChangeNotifier {
   }
 
   /// Wraps fire-and-forget DB calls so errors are logged instead of silently lost.
-  void _safeDb(Future<void> Function() fn) {
-    fn().catchError((e) => debugPrint('[DB WRITE] $e'));
+  Future<void> _safeDb(Future<void> Function() action) async {
+    try {
+      await action();
+    } catch (e) {
+      debugPrint('[DB ERROR] $e');
+    }
   }
 
   void clear() {
