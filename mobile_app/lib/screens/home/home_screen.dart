@@ -8,6 +8,7 @@ import '../../services/local_storage.dart';
 import '../../widgets/chat_tile.dart';
 import '../../widgets/avatar_widget.dart';
 import '../../widgets/app_logo.dart';
+import '../../../main.dart' show routeObserver;
 
 /// Main home screen with bottom navigation: Chats, Friends, Groups.
 class HomeScreen extends StatefulWidget {
@@ -17,20 +18,38 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with RouteAware {
   int _currentIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    // LocalStorage is already initialized in AuthProvider before connecting.
-    // Just load persisted data and fetch fresh data from server.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       context.read<ChatProvider>().loadFromStorage();
       context.read<FriendsProvider>().fetchFriends();
       context.read<GroupsProvider>().fetchGroups();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    routeObserver.subscribe(this, ModalRoute.of(context)!);
+  }
+
+  @override
+  void dispose() {
+    routeObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  /// Called when the user pops back to this screen from ChatScreen (or any
+  /// pushed route). Fires after the route is fully active, so Provider's
+  /// notifyListeners() will now reach all widgets correctly.
+  @override
+  void didPopNext() {
+    if (mounted) setState(() {});
   }
 
   @override

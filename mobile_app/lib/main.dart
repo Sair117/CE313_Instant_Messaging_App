@@ -16,6 +16,10 @@ import 'screens/chat/chat_screen.dart';
 import 'screens/groups/group_detail_screen.dart';
 import 'screens/settings/settings_screen.dart';
 
+/// Shared route observer — lets any screen detect when it regains focus.
+final RouteObserver<ModalRoute<void>> routeObserver =
+    RouteObserver<ModalRoute<void>>();
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -80,8 +84,8 @@ class _AppShellState extends State<_AppShell> {
         return;
       }
 
-      // Chat messages & receipts
-      if (type == 'direct_msg' || type == 'group_msg' || type == 'receipt') {
+      // Chat messages, receipts, and delivery status sync
+      if (type == 'direct_msg' || type == 'group_msg' || type == 'receipt' || type == 'outbound_status') {
         chat.handleMessage(msg, auth.username);
         return;
       }
@@ -116,6 +120,7 @@ class _AppShellState extends State<_AppShell> {
       theme: AppTheme.lightTheme(),
       darkTheme: AppTheme.darkTheme(),
       themeMode: ThemeMode.system,
+      navigatorObservers: [routeObserver],
       home: Consumer<AuthProvider>(
         builder: (context, auth, _) {
           if (auth.state == AuthState.authenticated) {
