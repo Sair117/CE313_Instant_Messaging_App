@@ -6,7 +6,7 @@ import '../providers/chat_provider.dart';
 class GroupsProvider extends ChangeNotifier {
   final ConnectionService _conn;
 
-  // group_id → {created_by, members (if loaded)}
+  // group_id → {created_by, members: List<String>?}
   final Map<String, Map<String, dynamic>> _groups = {};
   String _lastError = '';
   String _lastSuccess = '';
@@ -18,29 +18,54 @@ class GroupsProvider extends ChangeNotifier {
   String get lastError => _lastError;
   String get lastSuccess => _lastSuccess;
 
-  /// Handle incoming messages related to groups.
+  /// Returns the cached member list for a group, or empty if not yet loaded.
+  List<String> getGroupMembers(String groupId) {
+    final members = _groups[groupId]?['members'];
+    if (members == null) return [];
+    return List<String>.from(members as List);
+  }
+
   void handleMessage(Map<String, dynamic> msg) {
     switch (msg['type']) {
       case 'groups_list':
+        // Preserve any already-loaded member lists across a refresh.
+        final prev = Map<String, Map<String, dynamic>>.from(_groups);
         _groups.clear();
         for (final g in (msg['groups'] as List)) {
-          _groups[g['group_id']] = {'created_by': g['created_by']};
+          final gid = g['group_id'] as String;
+          _groups[gid] = {
+            'created_by': g['created_by'],
+            'members': prev[gid]?['members'], // keep loaded members
+          };
         }
         break;
+
+      case 'group_members':
+        final groupId = msg['group_id'] as String;
+        final members = List<String>.from(msg['members'] as List);
+        if (_groups.containsKey(groupId)) {
+          _groups[groupId]!['members'] = members;
+        }
+        break;
+
       case 'group_res':
         if (msg['success'] == true) {
           _lastSuccess = msg['message'] ?? 'Success';
           _lastError = '';
-          fetchGroups(); // Refresh
+          fetchGroups();
+          // If the server tells us which group was affected, refresh its members.
+          final groupId = msg['group_id'] as String?;
+          if (groupId != null) fetchGroupMembers(groupId);
         } else {
           _lastError = msg['message'] ?? 'Failed';
           _lastSuccess = '';
         }
         break;
+
       case 'group_notif':
-        // You were added to a group
+        // Added to a group by someone else.
         final groupId = msg['group_id'] as String;
-        _groups[groupId] = {'created_by': ''};
+        _groups[groupId] = {'created_by': '', 'members': null};
         _lastSuccess = msg['message'] ?? 'Added to group';
         fetchGroups();
         break;
@@ -48,21 +73,23 @@ class GroupsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Fetch all groups the user belongs to.
   void fetchGroups() {
     _conn.send({'type': 'get_groups'});
   }
 
-  /// Create a new group.
+  void fetchGroupMembers(String groupId) {
+    _conn.send({'type': 'get_group_members', 'group_id': groupId});
+  }
+
   void createGroup(String groupId) {
     _lastError = '';
     _lastSuccess = '';
     _conn.send({'type': 'create_group', 'group_id': groupId});
   }
 
-  /// Add a member to a group (creator only).
   void addMember(String groupId, String username) {
     _lastError = '';
+    _lastSuccess = '';
     _conn.send({
       'type': 'group_manage',
       'group_id': groupId,
@@ -71,9 +98,9 @@ class GroupsProvider extends ChangeNotifier {
     });
   }
 
-  /// Remove a member from a group (creator only).
   void removeMember(String groupId, String username) {
     _lastError = '';
+    _lastSuccess = '';
     _conn.send({
       'type': 'group_manage',
       'group_id': groupId,
@@ -82,17 +109,22 @@ class GroupsProvider extends ChangeNotifier {
     });
   }
 
-  /// Leave a group and remove its conversation.
   void leaveGroup(String groupId, {ChatProvider? chatProvider}) {
     _conn.send({'type': 'leave_group', 'group_id': groupId});
     _groups.remove(groupId);
-    // Also remove the group conversation from chat history
     chatProvider?.deleteConversation(groupId);
     notifyListeners();
   }
 
   bool isCreator(String groupId, String username) {
     return _groups[groupId]?['created_by'] == username;
+  }
+
+  void clearMessages() {
+    if (_lastError.isEmpty && _lastSuccess.isEmpty) return;
+    _lastError = '';
+    _lastSuccess = '';
+    notifyListeners();
   }
 
   void clear() {

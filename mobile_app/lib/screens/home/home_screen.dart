@@ -158,24 +158,6 @@ class _ChatsTab extends StatelessWidget {
     final convs = chat.conversations;
     final cs = Theme.of(context).colorScheme;
 
-    if (convs.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.chat_bubble_outline, size: 64,
-                color: cs.onSurfaceVariant.withValues(alpha: 0.3)),
-            const SizedBox(height: 16),
-            Text('No conversations yet',
-                style: TextStyle(color: cs.onSurfaceVariant)),
-            const SizedBox(height: 8),
-            Text('Add a friend and start chatting!',
-                style: TextStyle(color: cs.onSurfaceVariant.withValues(alpha: 0.6), fontSize: 13)),
-          ],
-        ),
-      );
-    }
-
     final sortedKeys = convs.keys.toList()
       ..sort((a, b) {
         final tsA = convs[a]!['last_timestamp'] ?? '';
@@ -183,34 +165,67 @@ class _ChatsTab extends StatelessWidget {
         return tsB.compareTo(tsA);
       });
 
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: sortedKeys.length,
-      itemBuilder: (context, i) {
-        final id = sortedKeys[i];
-        final conv = convs[id]!;
-        return ChatTile(
-          name: conv['name'] ?? id,
-          lastMessage: conv['last_message'] ?? '',
-          timestamp: conv['last_timestamp'],
-          isGroup: conv['type'] == 'group',
-          unreadCount: chat.unreadCount(id),
-          onTap: () {
-            chat.markRead(id);
-            Navigator.pushNamed(context, '/chat', arguments: {
-              'id': id,
-              'name': conv['name'] ?? id,
-              'type': conv['type'] ?? 'direct',
-            });
-          },
-          onDismissed: () {
-            chat.deleteConversation(id);
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Deleted chat with ${conv['name'] ?? id}')),
-            );
-          },
-        );
-      },
+    return RefreshIndicator(
+      color: cs.primary,
+      backgroundColor: cs.surfaceContainerHighest,
+      onRefresh: () => context.read<ChatProvider>().loadFromStorage(),
+      child: convs.isEmpty
+          ? ListView(
+              // Must be scrollable so the pull gesture is recognised when empty.
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: [
+                SizedBox(
+                  height: MediaQuery.sizeOf(context).height * 0.55,
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.chat_bubble_outline, size: 64,
+                            color: cs.onSurfaceVariant.withValues(alpha: 0.3)),
+                        const SizedBox(height: 16),
+                        Text('No conversations yet',
+                            style: TextStyle(color: cs.onSurfaceVariant)),
+                        const SizedBox(height: 8),
+                        Text('Add a friend and start chatting!',
+                            style: TextStyle(
+                                color: cs.onSurfaceVariant.withValues(alpha: 0.6),
+                                fontSize: 13)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              itemCount: sortedKeys.length,
+              itemBuilder: (context, i) {
+                final id = sortedKeys[i];
+                final conv = convs[id]!;
+                return ChatTile(
+                  name: conv['name'] ?? id,
+                  lastMessage: conv['last_message'] ?? '',
+                  timestamp: conv['last_timestamp'],
+                  isGroup: conv['type'] == 'group',
+                  unreadCount: chat.unreadCount(id),
+                  onTap: () {
+                    chat.markRead(id);
+                    Navigator.pushNamed(context, '/chat', arguments: {
+                      'id': id,
+                      'name': conv['name'] ?? id,
+                      'type': conv['type'] ?? 'direct',
+                    });
+                  },
+                  onDismissed: () {
+                    chat.deleteConversation(id);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Deleted chat with ${conv['name'] ?? id}')),
+                    );
+                  },
+                );
+              },
+            ),
     );
   }
 }
@@ -250,7 +265,7 @@ class _FriendsTab extends StatelessWidget {
         // Add friend bar
         Padding(
           padding: const EdgeInsets.all(12),
-          child: _AddFriendBar(),
+          child: const _AddFriendBar(),
         ),
 
         // Pending requests
@@ -317,10 +332,21 @@ class _FriendsTab extends StatelessWidget {
   }
 }
 
-class _AddFriendBar extends StatelessWidget {
+class _AddFriendBar extends StatefulWidget {
+  const _AddFriendBar();
+
+  @override
+  State<_AddFriendBar> createState() => _AddFriendBarState();
+}
+
+class _AddFriendBarState extends State<_AddFriendBar> {
   final _controller = TextEditingController();
 
-  _AddFriendBar();
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -369,12 +395,27 @@ class _GroupsTab extends StatelessWidget {
     final groups = context.watch<GroupsProvider>();
     final cs = Theme.of(context).colorScheme;
 
+    if (groups.lastError.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(groups.lastError), backgroundColor: cs.error),
+        );
+        groups.clearMessages();
+      });
+    } else if (groups.lastSuccess.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(groups.lastSuccess)),
+        );
+        groups.clearMessages();
+      });
+    }
+
     return Column(
       children: [
-        // Create group bar
         Padding(
           padding: const EdgeInsets.all(12),
-          child: _CreateGroupBar(),
+          child: const _CreateGroupBar(),
         ),
         Expanded(
           child: groups.groupIds.isEmpty
@@ -413,10 +454,21 @@ class _GroupsTab extends StatelessWidget {
   }
 }
 
-class _CreateGroupBar extends StatelessWidget {
+class _CreateGroupBar extends StatefulWidget {
+  const _CreateGroupBar();
+
+  @override
+  State<_CreateGroupBar> createState() => _CreateGroupBarState();
+}
+
+class _CreateGroupBarState extends State<_CreateGroupBar> {
   final _controller = TextEditingController();
 
-  _CreateGroupBar();
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {

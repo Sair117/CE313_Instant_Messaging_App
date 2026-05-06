@@ -28,6 +28,7 @@ class MessageRouter:
             "leave_group": self._handle_leave_group,
             "get_friends": self._handle_get_friends,
             "get_groups": self._handle_get_groups,
+            "get_group_members": self._handle_get_group_members,
             "ack": self._handle_ack,
             "ping": self._handle_ping,
         }
@@ -195,9 +196,9 @@ class MessageRouter:
             return
 
         if database.create_group(group_id, sender):
-            self._send_to(sender, {"type": "group_res", "success": True, "message": f"Group '{group_id}' created."})
+            self._send_to(sender, {"type": "group_res", "success": True, "message": f"Group '{group_id}' created.", "group_id": group_id})
         else:
-            self._send_to(sender, {"type": "group_res", "success": False, "message": "Group ID already taken."})
+            self._send_to(sender, {"type": "group_res", "success": False, "message": "Group ID already taken.", "group_id": group_id})
 
     def _handle_group_manage(self, sender: str, msg: dict):
         """Adds or removes members from a group. Only the group creator can do this."""
@@ -224,7 +225,7 @@ class MessageRouter:
             success = database.remove_group_member(group_id, target)
             result_msg = f"'{target}' removed from group." if success else f"'{target}' is not a member."
 
-        self._send_to(sender, {"type": "group_res", "success": success, "message": result_msg})
+        self._send_to(sender, {"type": "group_res", "success": success, "message": result_msg, "group_id": group_id})
 
         # Notify the target if they are online and were added
         if success and action == "add":
@@ -267,6 +268,18 @@ class MessageRouter:
             "type": "groups_list",
             "groups": groups,
         })
+
+    def _handle_get_group_members(self, sender: str, msg: dict):
+        """Returns the full member list for a group (sender must be a member)."""
+        group_id = msg.get("group_id")
+        if not (isinstance(group_id, str) and group_id):
+            self._send_to(sender, {"type": "error", "message": "Invalid group_id"})
+            return
+        members = database.get_group_members(group_id)
+        if sender not in members:
+            self._send_to(sender, {"type": "error", "message": "Not a member of this group"})
+            return
+        self._send_to(sender, {"type": "group_members", "group_id": group_id, "members": members})
 
     # ---------------------------------------------------------------
     #  Utility Methods

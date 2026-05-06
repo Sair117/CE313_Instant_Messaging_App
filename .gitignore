@@ -34,3 +34,7 @@ tests/_test_data/
 Thumbs.db
 
 im-system-key.pem
+
+Technical_Report.docx
+Technical_Report.pdf
+.gitignore

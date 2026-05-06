@@ -97,7 +97,7 @@ class _AppShellState extends State<_AppShell> {
       }
 
       // Groups
-      if (type == 'groups_list' || type == 'group_res' || type == 'group_notif') {
+      if (type == 'groups_list' || type == 'group_res' || type == 'group_notif' || type == 'group_members') {
         groups.handleMessage(msg);
         return;
       }
